@@ -1,0 +1,1051 @@
+--[[ S Glass UI - FULL (586x339) | Dark Gothic / Cyberpunk Glass
+ Systems: Window + animated scene, Header Search, Tabs, 2 columns, Collapsible sections,
+ Collapse(count) groups, Button/Toggle/Slider/ToggleSlider/Dropdown(search)/TextBox/ColorPicker,
+ "..." sub-pages, Mini-picker, Notify(progress), Key system, Floating Open Button (30 shapes + customize page),
+ Avatar Hub (skin importer/reset/auto-respawn/body parts/50+ effects/Corblox), Preloader, Config saving. ]]
+
+local Lib = {}
+local TS = game:GetService("TweenService")
+local UIS = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
+local SS = game:GetService("SoundService")
+local HS = game:GetService("HttpService")
+local GS = game:GetService("GuiService")
+local CP = game:GetService("ContentProvider")
+local MPS = game:GetService("MarketplaceService")
+local AssetService = game:GetService("AssetService")
+local Debris = game:GetService("Debris")
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+
+local PURPLE, PINK, DARKRED = Color3.fromHex("8A2BE2"), Color3.fromHex("FF69B4"), Color3.fromHex("8B0000")
+local BG, PANEL, ITEM = Color3.fromRGB(10, 10, 12), Color3.fromRGB(20, 20, 26), Color3.fromRGB(30, 30, 38)
+local TEXT, SUB = Color3.fromRGB(235, 235, 245), Color3.fromRGB(150, 150, 170)
+local MB1, TOUCH = Enum.UserInputType.MouseButton1, Enum.UserInputType.Touch
+local ICON_URL = "https://raw.githubusercontent.com/Footagesus/Icons/refs/heads/main/solar/dist/Icons.lua"
+local SOUND_ID = "rbxassetid://3868133279"
+local FULL = UDim2.fromScale(1, 1)
+
+---------------------------------------------------------------- helpers
+local function make(class, props, parent)
+	local o = Instance.new(class)
+	for k, v in pairs(props) do o[k] = v end
+	o.Parent = parent
+	return o
+end
+local function corner(o, r) return make("UICorner", {CornerRadius = UDim.new(0, r)}, o) end
+local function stroke(o, c, t, tr) return make("UIStroke", {Color = c, Thickness = t or 1, Transparency = tr or 0.4, ApplyStrokeMode = Enum.ApplyStrokeMode.Border}, o) end
+local function tween(o, t, p) TS:Create(o, TweenInfo.new(t, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), p):Play() end
+local function pad(o, p) return make("UIPadding", {PaddingTop = UDim.new(0, p), PaddingBottom = UDim.new(0, p), PaddingLeft = UDim.new(0, p), PaddingRight = UDim.new(0, p)}, o) end
+local function list(o, p) return make("UIListLayout", {Padding = UDim.new(0, p), SortOrder = Enum.SortOrder.LayoutOrder}, o) end
+local function mousePos()
+	local m, ins = UIS:GetMouseLocation(), GS:GetGuiInset()
+	return Vector2.new(m.X, m.Y - ins.Y)
+end
+local function click()
+	local s = make("Sound", {SoundId = SOUND_ID, Volume = 0.5}, SS)
+	s:Play(); Debris:AddItem(s, 3)
+end
+local function ripple(btn)
+	btn.ClipsDescendants = true
+	btn.InputBegan:Connect(function(i)
+		if i.UserInputType == MB1 or i.UserInputType == TOUCH then
+			click()
+			local rel = Vector2.new(i.Position.X, i.Position.Y) - btn.AbsolutePosition
+			local c = make("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromOffset(rel.X, rel.Y), Size = UDim2.fromOffset(0, 0), BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0.7, ZIndex = btn.ZIndex + 5}, btn)
+			corner(c, 100)
+			local m = math.max(btn.AbsoluteSize.X, btn.AbsoluteSize.Y) * 2.4
+			tween(c, 0.5, {Size = UDim2.fromOffset(m, m), BackgroundTransparency = 1})
+			Debris:AddItem(c, 0.55)
+		end
+	end)
+end
+local function guiParent()
+	if gethui then local ok, h = pcall(gethui); if ok and h then return h end end
+	local ok = pcall(function() return game:GetService("CoreGui").Name end)
+	return ok and game:GetService("CoreGui") or LP:WaitForChild("PlayerGui")
+end
+
+---------------------------------------------------------------- icons (Lucide/Solar) + preloader
+local IconLib, iconWaiters = nil, {}
+task.spawn(function()
+	local ok, res = pcall(function() return loadstring(game:HttpGet(ICON_URL))() end)
+	if ok and res then IconLib = res; for _, f in ipairs(iconWaiters) do task.spawn(f) end end
+end)
+local function lookupIcon(name)
+	if not IconLib then return nil end
+	local ok, a, b, c = pcall(function()
+		if type(IconLib.Icon) == "function" then return IconLib.Icon(name)
+		elseif type(IconLib.GetIcon) == "function" then return IconLib.GetIcon(name) end
+		return IconLib[name]
+	end)
+	if not ok or a == nil then return nil end
+	if type(a) == "string" then return {Image = a, Size = b, Pos = c} end
+	if type(a) == "table" then return {Image = a.Image or a[1], Size = a.ImageRectSize or a.Size or a[2], Pos = a.ImageRectPosition or a.Position or a[3]} end
+end
+local function applyIcon(img, fallback, name)
+	if not name then return end
+	name = tostring(name)
+	local function show() img.Visible = true; if fallback then fallback.Visible = false end end
+	if name:find("rbxassetid") or name:match("^%d+$") then
+		img.Image = name:match("^%d+$") and ("rbxassetid://" .. name) or name; show(); return
+	end
+	local function try()
+		local r = lookupIcon(name)
+		if r and r.Image then
+			img.Image = r.Image
+			if typeof(r.Size) == "Vector2" then img.ImageRectSize = r.Size end
+			if typeof(r.Pos) == "Vector2" then img.ImageRectPosition = r.Pos end
+			show()
+		end
+	end
+	try()
+	if not img.Visible then table.insert(iconWaiters, try) end
+end
+
+-- heavy preloader: batches + yields so the main thread never lags
+function Lib.Preload(items, onDone)
+	task.spawn(function()
+		local batch = {}
+		for i, a in ipairs(items) do
+			table.insert(batch, a)
+			if #batch >= 8 or i == #items then
+				pcall(function() CP:PreloadAsync(batch) end)
+				batch = {}
+				task.wait()
+			end
+		end
+		if onDone then onDone() end
+	end)
+end
+Lib.Preload({SOUND_ID, "rbxthumb://type=AvatarHeadShot&id=" .. LP.UserId .. "&w=150&h=150"})
+
+---------------------------------------------------------------- open button shapes (30)
+local shapeList = {
+	{"Square",0,1,1,0},{"Soft",4,1,1,0},{"Rounded",10,1,1,0},{"Smooth",16,1,1,0},{"Pill",999,1,1,0},
+	{"Circle",999,1,1,0,true,true},{"Dairy",999,1,1,0,true,true},{"Wide",8,1.6,1,0},{"WideSoft",14,1.6,1,0},{"WidePill",999,1.6,1,0},
+	{"Tall",8,1,1.6,0},{"TallPill",999,1,1.6,0},{"Diamond",0,1,1,45,true},{"DiamondSoft",8,1,1,45,true},{"TiltLeft",8,1,1,-10},
+	{"TiltRight",8,1,1,10},{"Ticket",2,1.4,1,0},{"Badge",20,1.2,1,0},{"Capsule",999,1.8,1,0},{"Plate",6,1.8,1,0},
+	{"Block",0,1.4,1,0},{"Slab",3,2,.8,0},{"Chip",12,1.3,.9,0},{"Tab",12,1.2,1,0},{"Orb",999,1,1,0,true,true},
+	{"Mini",6,.8,.8,0},{"Large",14,1.3,1.3,0},{"Shard",0,1,1,12},{"Leaf",18,1,1,-6},{"Gem",4,1,1,45,true},
+}
+local shapes, shapeNames = {}, {}
+for _, s in ipairs(shapeList) do
+	shapes[s[1]] = {r = s[2], w = s[3], h = s[4], rot = s[5], sq = s[6], circ = s[7]}
+	table.insert(shapeNames, s[1])
+end
+
+---------------------------------------------------------------- KEY SYSTEM
+function Lib:Key(cfg)
+	cfg = cfg or {}
+	local acc = cfg.Theme or PURPLE
+	local folder = cfg.Folder or "SGlassUI"
+	local kp = folder .. "/key.txt"
+	local valid = {}
+	local function add(k)
+		if type(k) == "string" then valid[k] = true
+		elseif type(k) == "table" then for _, x in ipairs(k) do valid[tostring(x)] = true end end
+	end
+	add(cfg.Key); add(cfg.Keys)
+	if cfg.KeyUrl then
+		pcall(function() for line in game:HttpGet(cfg.KeyUrl):gmatch("[^\r\n]+") do valid[line] = true end end)
+	end
+	if cfg.SaveKey and isfile and pcall(isfile, kp) and isfile(kp) then
+		local ok, saved = pcall(readfile, kp)
+		if ok and valid[saved] then if cfg.Callback then cfg.Callback() end return true end
+	end
+	local g = make("ScreenGui", {Name = "SGlassKey", ResetOnSpawn = false, DisplayOrder = 300}, guiParent())
+	local f = make("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(300, 180), BackgroundColor3 = BG, BackgroundTransparency = 0.08}, g)
+	corner(f, 12)
+	local st = stroke(f, Color3.new(1, 1, 1), 1.6, 0)
+	local gr = make("UIGradient", {Color = ColorSequence.new({ColorSequenceKeypoint.new(0, acc), ColorSequenceKeypoint.new(.5, PINK), ColorSequenceKeypoint.new(1, acc)})}, st)
+	local conn = RS.RenderStepped:Connect(function(dt) gr.Rotation = (gr.Rotation + dt * 25) % 360 end)
+	local ico = make("ImageLabel", {Position = UDim2.fromOffset(14, 12), Size = UDim2.fromOffset(24, 24), BackgroundTransparency = 1, Visible = false, ImageColor3 = TEXT}, f)
+	local fb = make("TextLabel", {Position = UDim2.fromOffset(14, 12), Size = UDim2.fromOffset(24, 24), BackgroundTransparency = 1, Text = "S", Font = Enum.Font.GothamBlack, TextSize = 20, TextColor3 = TEXT}, f)
+	applyIcon(ico, fb, cfg.Icon)
+	make("TextLabel", {Position = UDim2.fromOffset(46, 12), Size = UDim2.new(1, -56, 0, 24), BackgroundTransparency = 1, Text = cfg.Title or "Key System", Font = Enum.Font.GothamBold, TextSize = 15, TextColor3 = TEXT, TextXAlignment = Enum.TextXAlignment.Left}, f)
+	local status = make("TextLabel", {Position = UDim2.fromOffset(14, 42), Size = UDim2.new(1, -28, 0, 16), BackgroundTransparency = 1, Text = cfg.Note or "Enter your key to continue", Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = SUB, TextXAlignment = Enum.TextXAlignment.Left}, f)
+	local tb = make("TextBox", {Position = UDim2.fromOffset(14, 68), Size = UDim2.new(1, -28, 0, 32), BackgroundColor3 = ITEM, BackgroundTransparency = 0.3, PlaceholderText = "Key...", PlaceholderColor3 = SUB, Text = "", ClearTextOnFocus = false, Font = Enum.Font.Gotham, TextSize = 13, TextColor3 = TEXT}, f)
+	corner(tb, 8); stroke(tb, acc, 1, 0.5)
+	local function btn(txt, x, w, col)
+		local b = make("TextButton", {Position = UDim2.fromOffset(x, 114), Size = UDim2.fromOffset(w, 34), BackgroundColor3 = col, BackgroundTransparency = 0.3, Text = txt, Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = TEXT, AutoButtonColor = false}, f)
+		corner(b, 8); ripple(b); return b
+	end
+	local verify, getkey = btn("Verify", 14, 130, acc), btn("Get Key", 156, 130, Color3.fromRGB(60, 60, 75))
+	local ev = Instance.new("BindableEvent")
+	getkey.Activated:Connect(function()
+		if cfg.Url and setclipboard then pcall(setclipboard, cfg.Url); status.Text = "Key link copied to clipboard"; status.TextColor3 = SUB
+		else status.Text = cfg.Url or "No link set" end
+	end)
+	verify.Activated:Connect(function()
+		local k = tb.Text:gsub("%s", "")
+		if valid[k] then
+			if cfg.SaveKey and writefile then pcall(function() if makefolder and not isfolder(folder) then makefolder(folder) end writefile(kp, k) end) end
+			conn:Disconnect(); g:Destroy(); ev:Fire()
+		else
+			status.Text = "Invalid key"; status.TextColor3 = Color3.fromRGB(255, 90, 90)
+			for _ = 1, 3 do f.Position = UDim2.new(.5, 8, .5, 0); task.wait(0.04); f.Position = UDim2.new(.5, -8, .5, 0); task.wait(0.04) end
+			f.Position = UDim2.fromScale(.5, .5)
+		end
+	end)
+	ev.Event:Wait()
+	if cfg.Callback then cfg.Callback() end
+	return true
+end
+
+---------------------------------------------------------------- WINDOW
+function Lib:CreateWindow(cfg)
+	cfg = cfg or {}
+	local Window, conns = {}, {}
+	local ACC = cfg.Theme or PURPLE
+	local baseTitle = cfg.Title or "S Hub"
+	local folder = cfg.Folder or "SGlassUI"
+	local path = folder .. "/config.json"
+	local flags = {}
+	pcall(function() if isfile and isfile(path) then flags = HS:JSONDecode(readfile(path)) end end)
+	Window.Flags = flags
+
+	local saving = false
+	local function save()
+		if saving then return end
+		saving = true
+		task.delay(0.4, function()
+			saving = false
+			pcall(function()
+				if writefile then
+					if makefolder and not isfolder(folder) then makefolder(folder) end
+					writefile(path, HS:JSONEncode(flags))
+				end
+			end)
+		end)
+	end
+	local function bind(sig, fn) local c = sig:Connect(fn); table.insert(conns, c); return c end
+	local function getf(o, k, d) if o.NoSave then return d end local v = flags[k]; if v == nil then return d end return v end
+	local function setf(o, k, v, silent) if o.NoSave then return end flags[k] = v; if not silent then save() end end
+
+	local Gui = make("ScreenGui", {Name = "SGlassUI", ResetOnSpawn = false, IgnoreGuiInset = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 100}, guiParent())
+	local PopGui = make("ScreenGui", {Name = "SGlassPop", ResetOnSpawn = false, IgnoreGuiInset = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 200}, guiParent())
+	Gui.Destroying:Connect(function() for _, c in ipairs(conns) do c:Disconnect() end PopGui:Destroy() end)
+
+	-- drag helpers (single finger / single pointer only)
+	local function dragArea(frame, fn)
+		local drag
+		bind(frame.InputBegan, function(i)
+			if not drag and (i.UserInputType == MB1 or i.UserInputType == TOUCH) then drag = i; fn(i.Position.X, i.Position.Y) end
+		end)
+		bind(UIS.InputChanged, function(i)
+			if not drag then return end
+			if i == drag then fn(i.Position.X, i.Position.Y)
+			elseif i.UserInputType == Enum.UserInputType.MouseMovement and drag.UserInputType == MB1 then local m = mousePos(); fn(m.X, m.Y) end
+		end)
+		bind(UIS.InputEnded, function(i)
+			if drag and (i == drag or (drag.UserInputType == MB1 and i.UserInputType == MB1)) then drag = nil end
+		end)
+	end
+	local function draggable(handle, target, enabled, onEnd)
+		local active, startMouse, startPos, moved
+		bind(handle.InputBegan, function(i)
+			if active or (enabled and not enabled()) then return end
+			if i.UserInputType == MB1 or i.UserInputType == TOUCH then
+				active, moved = i, false
+				startMouse, startPos = Vector2.new(i.Position.X, i.Position.Y), target.Position
+				target:SetAttribute("Dragged", false)
+			end
+		end)
+		bind(UIS.InputChanged, function(i)
+			if not active then return end
+			local p
+			if i == active then p = Vector2.new(i.Position.X, i.Position.Y)
+			elseif i.UserInputType == Enum.UserInputType.MouseMovement and active.UserInputType == MB1 then p = mousePos()
+			else return end
+			local d = p - startMouse
+			if d.Magnitude > 6 then moved = true; target:SetAttribute("Dragged", true) end
+			if moved then tween(target, 0.09, {Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)}) end
+		end)
+		bind(UIS.InputEnded, function(i)
+			if active and (i == active or (active.UserInputType == MB1 and i.UserInputType == MB1)) then
+				active = nil
+				if moved and onEnd then task.delay(0.15, onEnd) end
+			end
+		end)
+	end
+
+	-------------------------------------------------- main frame + animated scene
+	local Main = make("Frame", {Size = UDim2.fromOffset(586, 339), AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), BackgroundColor3 = BG, BackgroundTransparency = 0.1, ClipsDescendants = true}, Gui)
+	corner(Main, 12)
+	local border = stroke(Main, Color3.new(1, 1, 1), 1.6, 0)
+	local grad = make("UIGradient", {Color = ColorSequence.new({ColorSequenceKeypoint.new(0, PURPLE), ColorSequenceKeypoint.new(.5, PINK), ColorSequenceKeypoint.new(1, DARKRED)})}, border)
+
+	local Scene = make("Frame", {Size = FULL, BackgroundTransparency = 1, ClipsDescendants = true}, Main)
+	make("Frame", {AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, .4, 0), BackgroundColor3 = Color3.fromRGB(20, 60, 110), BackgroundTransparency = 0.82, BorderSizePixel = 0}, Scene)
+	local deck = make("Frame", {Position = UDim2.new(0, 0, .6, 0), Size = UDim2.new(1, 0, 0, 14), BackgroundColor3 = Color3.fromRGB(120, 80, 40), BackgroundTransparency = 0.7, BorderSizePixel = 0}, Scene)
+	for i = 0, 30 do make("Frame", {Position = UDim2.new(0, i * 20, 0, 0), Size = UDim2.new(0, 1, 1, 0), BackgroundColor3 = Color3.fromRGB(40, 25, 10), BackgroundTransparency = 0.6, BorderSizePixel = 0}, deck) end
+	local bridge = make("Frame", {Position = UDim2.new(0, 0, .22, 0), Size = UDim2.new(1, 0, 0, 6), BackgroundColor3 = Color3.fromRGB(90, 90, 100), BackgroundTransparency = 0.7, BorderSizePixel = 0}, Scene)
+	for i = 0, 6 do make("Frame", {Position = UDim2.new(0, i * 100 + 30, 1, 0), Size = UDim2.fromOffset(6, 40), BackgroundColor3 = Color3.fromRGB(70, 70, 80), BackgroundTransparency = 0.8, BorderSizePixel = 0}, bridge) end
+	local boat = make("Frame", {Position = UDim2.new(0, -40, .8, 0), Size = UDim2.fromOffset(34, 10), BackgroundColor3 = Color3.fromRGB(200, 200, 210), BackgroundTransparency = 0.6, BorderSizePixel = 0}, Scene)
+	corner(boat, 4)
+	make("Frame", {Position = UDim2.fromOffset(10, -8), Size = UDim2.fromOffset(12, 8), BackgroundColor3 = Color3.fromRGB(180, 60, 60), BackgroundTransparency = 0.5, BorderSizePixel = 0}, boat)
+	local cars = {}
+	for i = 1, 4 do
+		cars[i] = {f = make("Frame", {Size = UDim2.fromOffset(12, 5), BackgroundColor3 = Color3.fromHSV(i / 4, .7, 1), BackgroundTransparency = 0.4, BorderSizePixel = 0}, bridge), speed = 30 + i * 14, off = i * 140}
+	end
+	local openGrads, t0 = {}, 0
+	bind(RS.RenderStepped, function(dt)
+		t0 += dt
+		grad.Rotation = (grad.Rotation + dt * 20) % 360
+		boat.Position = UDim2.new(0, (t0 * 16) % 666 - 40, .8, math.sin(t0 * 2) * 2)
+		for _, c in ipairs(cars) do c.f.Position = UDim2.new(0, (t0 * c.speed + c.off) % 626 - 20, 0, -5) end
+		for _, g in ipairs(openGrads) do g.Rotation = (g.Rotation + dt * 40) % 360 end
+	end)
+
+	-------------------------------------------------- sidebar + header
+	local Side = make("Frame", {Size = UDim2.new(0, 56, 1, 0), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.45, BorderSizePixel = 0}, Main)
+	local logo = make("TextLabel", {Size = UDim2.new(1, 0, 0, 44), BackgroundTransparency = 1, Text = "S", Font = Enum.Font.GothamBlack, TextSize = 28, TextColor3 = Color3.new(1, 1, 1)}, Side)
+	stroke(logo, Color3.new(1, 1, 1), 1, 0.7)
+	local TabHolder = make("Frame", {Position = UDim2.fromOffset(0, 52), Size = UDim2.new(1, 0, 1, -52), BackgroundTransparency = 1}, Side)
+	list(TabHolder, 6).HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+	local Header = make("Frame", {Position = UDim2.fromOffset(56, 0), Size = UDim2.new(1, -56, 0, 38), BackgroundTransparency = 1}, Main)
+	local function hbtn(txt, x)
+		local b = make("TextButton", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, x, .5, 0), Size = UDim2.fromOffset(24, 24), BackgroundColor3 = ITEM, BackgroundTransparency = 0.3, Text = txt, Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = TEXT, AutoButtonColor = false}, Header)
+		corner(b, 6); ripple(b); return b
+	end
+	local closeBtn, minBtn = hbtn("X", -8), hbtn("-", -36)
+	local backBtn = make("TextButton", {Position = UDim2.fromOffset(8, 7), Size = UDim2.fromOffset(24, 24), BackgroundColor3 = ITEM, BackgroundTransparency = 0.3, Text = "<", Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = TEXT, AutoButtonColor = false, Visible = false}, Header)
+	corner(backBtn, 6); ripple(backBtn)
+	local titleLbl = make("TextLabel", {Position = UDim2.fromOffset(38, 0), Size = UDim2.new(0, 120, 1, 0), BackgroundTransparency = 1, Text = baseTitle, Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = TEXT, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd}, Header)
+	local SearchWrap = make("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -66, .5, 0), Size = UDim2.fromOffset(170, 24), BackgroundColor3 = ITEM, BackgroundTransparency = 0.3}, Header)
+	corner(SearchWrap, 8); stroke(SearchWrap, PURPLE, 1, 0.5)
+	make("TextLabel", {Size = UDim2.fromOffset(24, 24), BackgroundTransparency = 1, Text = "?", Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = SUB}, SearchWrap)
+	local Search = make("TextBox", {Position = UDim2.fromOffset(24, 0), Size = UDim2.new(1, -28, 1, 0), BackgroundTransparency = 1, PlaceholderText = "Search button...", PlaceholderColor3 = SUB, Text = "", ClearTextOnFocus = false, Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = TEXT, TextXAlignment = Enum.TextXAlignment.Left}, SearchWrap)
+	draggable(Header, Main)
+
+	local Pages = make("Frame", {Position = UDim2.fromOffset(56, 38), Size = UDim2.new(1, -56, 1, -38), BackgroundTransparency = 1}, Main)
+
+	-------------------------------------------------- state: tabs / subpages / search
+	local tabs, elements, sections = {}, {}, {}
+	local current, activeSub
+
+	local function leaveSub()
+		if activeSub then activeSub.page.Visible = false; activeSub = nil end
+		backBtn.Visible = false; titleLbl.Text = baseTitle
+	end
+	local function selectTab(t)
+		leaveSub()
+		current = t
+		for _, x in ipairs(tabs) do
+			x.page.Visible = (x == t)
+			tween(x.btn, 0.2, {BackgroundTransparency = x == t and 0.2 or 0.85, BackgroundColor3 = x == t and ACC or ITEM})
+		end
+	end
+	function Window:OpenSub(sub)
+		if current then current.page.Visible = false end
+		if activeSub then activeSub.page.Visible = false end
+		activeSub = sub; sub.page.Visible = true
+		backBtn.Visible = true; titleLbl.Text = sub.title or baseTitle
+	end
+	backBtn.Activated:Connect(function() leaveSub(); if current then current.page.Visible = true end end)
+
+	local function applySearch(q)
+		q = (q or ""):lower()
+		local firstTab
+		for _, s in ipairs(sections) do s.hits = 0 end
+		for _, e in ipairs(elements) do
+			e.match = q == "" or e.name:lower():find(q, 1, true) ~= nil
+			if e.match and q ~= "" then
+				if e.group and not e.group.open then e.group.set(true) end
+				e.sec.setOpen(true)
+				firstTab = firstTab or e.tab
+			end
+		end
+		for _, e in ipairs(elements) do
+			local vis = e.match and (e.group == nil or e.group.open)
+			e.frame.Visible = vis
+			if vis then e.sec.hits += 1 end
+		end
+		for _, s in ipairs(sections) do s.frame.Visible = q == "" or s.hits > 0 end
+		if firstTab and (firstTab ~= current or activeSub) then selectTab(firstTab) end
+	end
+	Search:GetPropertyChangedSignal("Text"):Connect(function() applySearch(Search.Text) end)
+
+	-------------------------------------------------- notifications (any corner)
+	local holders = {}
+	local function holder(pos)
+		pos = pos or "TopRight"
+		if holders[pos] then return holders[pos] end
+		local right, center, bottom = pos:find("Right"), pos:find("Center"), pos:find("Bottom")
+		local f = make("Frame", {AnchorPoint = Vector2.new(right and 1 or (center and .5 or 0), bottom and 1 or 0), Position = UDim2.new(right and 1 or (center and .5 or 0), right and -10 or (center and 0 or 10), bottom and 1 or 0, bottom and -10 or 10), Size = UDim2.fromOffset(230, 300), BackgroundTransparency = 1}, PopGui)
+		local l = list(f, 6)
+		if bottom then l.VerticalAlignment = Enum.VerticalAlignment.Bottom end
+		l.HorizontalAlignment = right and Enum.HorizontalAlignment.Right or (center and Enum.HorizontalAlignment.Center or Enum.HorizontalAlignment.Left)
+		holders[pos] = f
+		return f
+	end
+	function Window:Notify(o)
+		o = o or {}
+		local dur = o.Duration or 4
+		local f = make("Frame", {Size = UDim2.fromOffset(220, 60), BackgroundColor3 = BG, BackgroundTransparency = 0.1, ClipsDescendants = true}, holder(o.Position))
+		corner(f, 10); stroke(f, ACC, 1.2, 0.2)
+		local tx = 10
+		if o.Icon then
+			local img = make("ImageLabel", {Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(18, 18), BackgroundTransparency = 1, Visible = false, ImageColor3 = TEXT}, f)
+			local fb = make("TextLabel", {Position = UDim2.fromOffset(8, 8), Size = UDim2.fromOffset(18, 18), BackgroundTransparency = 1, Text = "!", Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = PINK}, f)
+			applyIcon(img, fb, o.Icon); tx = 32
+		end
+		make("TextLabel", {Position = UDim2.fromOffset(tx, 6), Size = UDim2.new(1, -tx - 8, 0, 18), BackgroundTransparency = 1, Text = o.Title or "Notice", Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = TEXT, TextXAlignment = Enum.TextXAlignment.Left}, f)
+		make("TextLabel", {Position = UDim2.fromOffset(10, 26), Size = UDim2.new(1, -20, 0, 26), BackgroundTransparency = 1, Text = o.Message or "", Font = Enum.Font.Gotham, TextSize = 11, TextColor3 = SUB, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top}, f)
+		local bar = make("Frame", {AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 3), BackgroundColor3 = PINK, BorderSizePixel = 0}, f)
+		TS:Create(bar, TweenInfo.new(dur, Enum.EasingStyle.Linear), {Size = UDim2.new(0, 0, 0, 3)}):Play()
+		click()
+		task.delay(dur, function() if f.Parent then f:Destroy() end end)
+	end
+
+	-------------------------------------------------- popups: color picker + sliders + mini picker
+	local colorPop, miniPop
+	local function popup(w, h, title)
+		local pop = make("Frame", {Size = UDim2.fromOffset(w, h), AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), BackgroundColor3 = BG, BackgroundTransparency = 0.04}, PopGui)
+		corner(pop, 10); stroke(pop, ACC, 1.2, 0.1)
+		make("TextLabel", {Position = UDim2.fromOffset(10, 4), Size = UDim2.new(1, -40, 0, 20), BackgroundTransparency = 1, Text = title, Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = TEXT, TextXAlignment = Enum.TextXAlignment.Left}, pop)
+		local x = make("TextButton", {AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(20, 20), BackgroundColor3 = ITEM, BackgroundTransparency = 0.3, Text = "x", Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = TEXT, AutoButtonColor = false}, pop)
+		corner(x, 5); ripple(x)
+		x.Activated:Connect(function() pop:Destroy() end)
+		draggable(pop, pop)
+		return pop
+	end
+
+	local function openColor(init, cb)
+		if colorPop then colorPop:Destroy() end
+		local h, s, v = init:ToHSV()
+		local pop = popup(190, 182, "Color")
+		colorPop = pop
+		local sv = make("Frame", {Position = UDim2.fromOffset(10, 28), Size = UDim2.fromOffset(170, 100), BackgroundColor3 = Color3.fromHSV(h, 1, 1)}, pop)
+		corner(sv, 6)
+		local wf = make("Frame", {Size = FULL, BackgroundColor3 = Color3.new(1, 1, 1)}, sv); corner(wf, 6)
+		make("UIGradient", {Transparency = NumberSequence.new(0, 1)}, wf)
+		local bf = make("Frame", {Size = FULL, BackgroundColor3 = Color3.new(0, 0, 0)}, sv); corner(bf, 6)
+		make("UIGradient", {Rotation = 90, Transparency = NumberSequence.new(1, 0)}, bf)
+		local cur = make("Frame", {AnchorPoint = Vector2.new(.5, .5), Size = UDim2.fromOffset(10, 10), BackgroundTransparency = 1}, sv)
+		corner(cur, 5); stroke(cur, Color3.new(1, 1, 1), 2, 0)
+		local hue = make("Frame", {Position = UDim2.fromOffset(10, 134), Size = UDim2.fromOffset(170, 10), BackgroundColor3 = Color3.new(1, 1, 1)}, pop)
+		corner(hue, 5)
+		local seq = {}
+		for i, c in ipairs({"FF0000", "FFFF00", "00FF00", "00FFFF", "0000FF", "FF00FF", "FF0000"}) do seq[i] = ColorSequenceKeypoint.new((i - 1) / 6, Color3.fromHex(c)) end
+		make("UIGradient", {Color = ColorSequence.new(seq)}, hue)
+		local hc = make("Frame", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.new(h, 0, .5, 0), Size = UDim2.fromOffset(6, 14), BackgroundColor3 = Color3.new(1, 1, 1)}, hue)
+		corner(hc, 3)
+		local hex = make("TextBox", {Position = UDim2.fromOffset(10, 152), Size = UDim2.fromOffset(170, 22), BackgroundColor3 = ITEM, BackgroundTransparency = 0.3, Text = "", Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = TEXT, ClearTextOnFocus = false}, pop)
+		corner(hex, 5)
+		local function upd(fire)
+			local c = Color3.fromHSV(h, s, v)
+			sv.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+			cur.Position = UDim2.fromScale(s, 1 - v)
+			hc.Position = UDim2.new(h, 0, .5, 0)
+			hex.Text = "#" .. c:ToHex()
+			if fire and cb then cb(c) end
+		end
+		dragArea(sv, function(x, y)
+			s = math.clamp((x - sv.AbsolutePosition.X) / sv.AbsoluteSize.X, 0, 1)
+			v = 1 - math.clamp((y - sv.AbsolutePosition.Y) / sv.AbsoluteSize.Y, 0, 1)
+			upd(true)
+		end)
+		dragArea(hue, function(x) h = math.clamp((x - hue.AbsolutePosition.X) / hue.AbsoluteSize.X, 0, .999); upd(true) end)
+		hex.FocusLost:Connect(function()
+			local ok, c = pcall(Color3.fromHex, hex.Text:gsub("#", ""))
+			if ok and c then h, s, v = c:ToHSV(); upd(true) else upd(false) end
+		end)
+		upd(false)
+	end
+	Window.PickColor = openColor
+
+	local function makeSlider(parent, name, min, max, val, step, cb, ht)
+		step = step or 1
+		local f = make("Frame", {Size = UDim2.new(1, 0, 0, ht or 38), BackgroundColor3 = ITEM, BackgroundTransparency = 0.35}, parent)
+		corner(f, 6)
+		local lb = make("TextLabel", {Position = UDim2.fromOffset(8, 2), Size = UDim2.new(1, -16, 0, 16), BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = TEXT, TextXAlignment = Enum.TextXAlignment.Left}, f)
+		local bar = make("Frame", {Position = UDim2.new(0, 8, 1, -12), Size = UDim2.new(1, -16, 0, 6), BackgroundColor3 = Color3.fromRGB(50, 50, 60)}, f)
+		corner(bar, 3)
+		local fill = make("Frame", {Size = UDim2.fromScale(0, 1), BackgroundColor3 = ACC}, bar)
+		corner(fill, 3)
+		local cur = val
+		local function set(v, silent)
+			v = math.clamp(math.floor(v / step + .5) * step, min, max)
+			v = tonumber(("%.3f"):format(v)); cur = v
+			fill.Size = UDim2.fromScale((v - min) / math.max(max - min, 1e-6), 1)
+			lb.Text = name .. ": " .. tostring(v)
+			if not silent and cb then cb(v) end
+		end
+		dragArea(bar, function(x) set(min + (max - min) * math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)) end)
+		set(val, true)
+		return f, set, function() return cur end
+	end
+
+	-- mini picker: quick edit of a button/toggle (name, size, transparency, border color/transparency)
+	local function openMini(sd, apply, persist, name)
+		if miniPop then miniPop:Destroy() end
+		local pop = popup(214, 214, "Quick Customize")
+		miniPop = pop
+		local body = make("Frame", {Position = UDim2.fromOffset(8, 28), Size = UDim2.new(1, -16, 1, -34), BackgroundTransparency = 1}, pop)
+		list(body, 5)
+		local tb = make("TextBox", {Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = ITEM, BackgroundTransparency = 0.3, Text = sd.n or name, PlaceholderText = "Name", Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = TEXT, ClearTextOnFocus = false}, body)
+		corner(tb, 6)
+		tb.FocusLost:Connect(function() sd.n = tb.Text; apply(); persist() end)
+		makeSlider(body, "Size", 20, 44, sd.h or 28, 1, function(v) sd.h = v; apply(); persist() end, 32)
+		makeSlider(body, "Transparency", 0, 1, sd.t or 0.35, 0.05, function(v) sd.t = v; apply(); persist() end, 32)
+		makeSlider(body, "Border transparency", 0, 1, sd.bt or 0.6, 0.05, function(v) sd.bt = v; apply(); persist() end, 32)
+		local cb = make("TextButton", {Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = ITEM, BackgroundTransparency = 0.3, Text = "Border color", Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = TEXT, AutoButtonColor = false}, body)
+		corner(cb, 6); ripple(cb)
+		cb.Activated:Connect(function()
+			openColor(sd.bc and Color3.fromHex(sd.bc) or Color3.fromRGB(70, 50, 110), function(c) sd.bc = c:ToHex(); apply(); persist() end)
+		end)
+	end
+
+	-------------------------------------------------- containers (tabs + sub pages)
+	local function newContainer(noSearch)
+		local C = {count = 0}
+		local page = make("ScrollingFrame", {Size = FULL, BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 2, ScrollBarImageColor3 = ACC, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, Visible = false}, Pages)
+		pad(page, 6)
+		local function col(x)
+			local c = make("Frame", {Position = UDim2.new(x, x == 0 and 0 or 3, 0, 0), Size = UDim2.new(.5, -3, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1}, page)
+			list(c, 6); return c
+		end
+		local L, R = col(0), col(.5)
+		C.page, C.noSearch = page, noSearch
+
+		function C:Section(so)
+			so = so or {}
+			C.count += 1
+			local side = so.Side or (C.count % 2 == 1 and "Left" or "Right")
+			local Sec = {hits = 0}
+			local frame = make("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = PANEL, BackgroundTransparency = 0.35}, side == "Left" and L or R)
+			corner(frame, 8); stroke(frame, PURPLE, 1, 0.65); pad(frame, 6); list(frame, 4)
+			local head = make("TextButton", {Size = UDim2.new(1, 0, 0, 24), BackgroundColor3 = ITEM, BackgroundTransparency = 0.4, Text = "  " .. (so.Name or "Section"), Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = TEXT, TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false}, frame)
+			corner(head, 6); stroke(head, PINK, 1, 0.6); ripple(head)
+			local arrow = make("TextLabel", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -6, .5, 0), Size = UDim2.fromOffset(16, 16), BackgroundTransparency = 1, Text = "v", Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = SUB}, head)
+			local content = make("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1}, frame)
+			list(content, 4)
+			Sec.frame = frame
+			function Sec.setOpen(v) content.Visible = v; arrow.Rotation = v and 0 or -90 end
+			head.Activated:Connect(function() Sec.setOpen(not content.Visible) end)
+			if not noSearch then table.insert(sections, Sec) end
+
+			local function reg(name, f)
+				local e = {name = name, frame = f, tab = C, sec = Sec, match = true}
+				if not noSearch then
+					table.insert(elements, e)
+					local g = Sec.group
+					if g then
+						e.group = g; table.insert(g.members, e); g.left -= 1
+						if g.left <= 0 then Sec.group = nil end
+					end
+				end
+				return e
+			end
+			local function label(p, t, x, w)
+				return make("TextLabel", {Position = UDim2.fromOffset(x or 8, 0), Size = UDim2.new(w or 1, -(x or 8) - 4, 1, 0), BackgroundTransparency = 1, Text = t, Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = TEXT, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd}, p)
+			end
+
+			-- row with mini-picker square + "..." sub page button on the left
+			local function styledRow(o, def)
+				local flag = o.Flag or o.Name or def
+				local row = make("TextButton", {Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = ITEM, BackgroundTransparency = 0.35, Text = "", AutoButtonColor = false}, content)
+				corner(row, 6)
+				local st = stroke(row, Color3.fromRGB(70, 50, 110), 1, 0.6)
+				local mini = make("TextButton", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 5, .5, 0), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = BG, BackgroundTransparency = 0.4, Text = "", AutoButtonColor = false}, row)
+				corner(mini, 3); stroke(mini, PINK, 1, 0.3)
+				local dots = make("TextButton", {AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 23, .5, 0), Size = UDim2.fromOffset(18, 14), BackgroundTransparency = 1, Text = "...", Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = SUB, AutoButtonColor = false}, row)
+				local nm = label(row, o.Name or def, 44, 1)
+				ripple(row)
+				local sk = "style:" .. flag
+				local sd = o.NoSave and {} or (flags[sk] or {})
+				local entry = reg(o.Name or def, row)
+				local function apply()
+					row.Size = UDim2.new(1, 0, 0, sd.h or 28)
+					row.BackgroundTransparency = sd.t or 0.35
+					st.Color = sd.bc and Color3.fromHex(sd.bc) or Color3.fromRGB(70, 50, 110)
+					st.Transparency = sd.bt or 0.6
+					if sd.n then nm.Text = sd.n; entry.name = sd.n end
+				end
+				apply()
+				mini.Activated:Connect(function() openMini(sd, apply, function() setf(o, sk, sd) end, nm.Text) end)
+				local sub
+				dots.Activated:Connect(function()
+					if not sub then
+						sub = Window:SubPage(nm.Text)
+						if o.Settings then o.Settings(sub)
+						else sub:Section({Name = "Settings"}):Label({Text = "No extra settings yet."}) end
+					end
+					Window:OpenSub(sub)
+				end)
+				return row, nm, flag
+			end
+
+			function Sec:Label(o) local f = make("Frame", {Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1}, content); label(f, o.Text or "", 4, 1).TextColor3 = SUB; reg(o.Text or "label", f) return f end
+			function Sec:Custom(h, builder) local f = make("Frame", {Size = UDim2.new(1, 0, 0, h), BackgroundColor3 = ITEM, BackgroundTransparency = 0.5, ClipsDescendants = true}, content); corner(f, 6); builder(f); return f end
+
+			function Sec:Collapse(o) -- collapses ONLY the next `Count` elements
+				local g = {open = true, members = {}, left = o.Count or 1}
+				local f = make("TextButton", {Size = UDim2.new(1, 0, 0, 26), BackgroundColor3 = ITEM, BackgroundTransparency = 0.45, Text = "", AutoButtonColor = false}, content)
+				corner(f, 6); stroke(f, PINK, 1, 0.5); ripple(f)
+				label(f, o.Name or "Group", 8, 1).Font = Enum.Font.GothamBold
+				local ar = make("TextLabel", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -8, .5, 0), Size = UDim2.fromOffset(16, 16), BackgroundTransparency = 1, Text = "v", Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = SUB}, f)
+				function g.set(v) g.open = v; ar.Rotation = v and 0 or -90 end
+				f.Activated:Connect(function() g.set(not g.open); applySearch(Search.Text) end)
+				reg(o.Name or "Group", f)
+				Sec.group = g
+				return g
+			end
+
+			function Sec:Button(o)
+				local row = styledRow(o, "Button")
+				row.Activated:Connect(function() if o.Callback then task.spawn(o.Callback) end end)
+			end
+
+			local function switch(parent, val, onToggle)
+				local pill = make("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -8, .5, 0), Size = UDim2.fromOffset(32, 16), BackgroundColor3 = Color3.fromRGB(50, 50, 60)}, parent)
+				corner(pill, 8)
+				local knob = make("Frame", {Position = UDim2.fromOffset(2, 2), Size = UDim2.fromOffset(12, 12), BackgroundColor3 = Color3.new(1, 1, 1)}, pill)
+				corner(knob, 6)
+				local state = val
+				local function set(v, silent)
+					state = v
+					tween(pill, .2, {BackgroundColor3 = v and ACC or Color3.fromRGB(50, 50, 60)})
+					tween(knob, .2, {Position = v and UDim2.fromOffset(18, 2) or UDim2.fromOffset(2, 2)})
+					if not silent then onToggle(v) end
+				end
+				set(val, true)
+				return set, function() return state end
+			end
+
+			function Sec:Toggle(o)
+				local row, nm, flag = styledRow(o, "Toggle")
+				nm.Size = UDim2.new(1, -88, 1, 0)
+				local val = getf(o, flag, o.Default or false)
+				local set, get = switch(row, val, function(v) setf(o, flag, v); if o.Callback then task.spawn(o.Callback, v) end end)
+				row.Activated:Connect(function() set(not get()) end)
+				if val and o.Callback then task.spawn(o.Callback, true) end
+				return {Set = set}
+			end
+
+			function Sec:Slider(o)
+				local flag = o.Flag or o.Name or "Slider"
+				local min, max = o.Min or 0, o.Max or 100
+				local f, set = makeSlider(content, o.Name or "Slider", min, max, getf(o, flag, o.Default or min), o.Increment or 1, function(v) setf(o, flag, v); if o.Callback then task.spawn(o.Callback, v) end end)
+				reg(o.Name or "Slider", f)
+				return {Set = set}
+			end
+
+			function Sec:ToggleSlider(o) -- toggle + slider merged in one control
+				local flag = o.Flag or o.Name or "ToggleSlider"
+				local min, max = o.Min or 0, o.Max or 100
+				local f = make("Frame", {Size = UDim2.new(1, 0, 0, 62), BackgroundColor3 = ITEM, BackgroundTransparency = 0.35}, content)
+				corner(f, 6)
+				local top = make("TextButton", {Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Text = "", AutoButtonColor = false}, f)
+				ripple(top); label(top, o.Name or "ToggleSlider", 8, 1)
+				local state, value = getf(o, flag .. "_on", o.Default or false), getf(o, flag .. "_v", o.Value or min)
+				local function fire() if o.Callback then task.spawn(o.Callback, state, value) end end
+				local set, get = switch(top, state, function(v) state = v; setf(o, flag .. "_on", v); fire() end)
+				top.Activated:Connect(function() set(not get()) end)
+				local sl = makeSlider(f, "Value", min, max, value, o.Increment or 1, function(v) value = v; setf(o, flag .. "_v", v); fire() end, 32)
+				sl.Position = UDim2.fromOffset(0, 28); sl.BackgroundTransparency = 1
+				reg(o.Name or "ToggleSlider", f)
+				if state then fire() end
+			end
+
+			function Sec:TextBox(o)
+				local flag = o.Flag or o.Name or "TextBox"
+				local f = make("Frame", {Size = UDim2.new(1, 0, 0, 46), BackgroundColor3 = ITEM, BackgroundTransparency = 0.35}, content)
+				corner(f, 6)
+				make("TextLabel", {Position = UDim2.fromOffset(8, 2), Size = UDim2.new(1, -16, 0, 16), BackgroundTransparency = 1, Text = o.Name or "TextBox", Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = TEXT, TextXAlignment = Enum.TextXAlignment.Left}, f)
+				local tb = make("TextBox", {Position = UDim2.fromOffset(8, 20), Size = UDim2.new(1, -16, 0, 20), BackgroundColor3 = BG, BackgroundTransparency = 0.3, PlaceholderText = o.Placeholder or "", PlaceholderColor3 = SUB, Text = getf(o, flag, o.Default or ""), ClearTextOnFocus = false, Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = TEXT}, f)
+				corner(tb, 5)
+				tb.FocusLost:Connect(function() click(); setf(o, flag, tb.Text); if o.Callback then task.spawn(o.Callback, tb.Text) end end)
+				reg(o.Name or "TextBox", f)
+				return tb
+			end
+
+			function Sec:ColorPicker(o)
+				local flag = o.Flag or o.Name or "Color"
+				local color = Color3.fromHex(getf(o, flag, (o.Default or PURPLE):ToHex()))
+				local row = make("TextButton", {Size = UDim2.new(1, 0, 0, 28), BackgroundColor3 = ITEM, BackgroundTransparency = 0.35, Text = "", AutoButtonColor = false}, content)
+				corner(row, 6); ripple(row); label(row, o.Name or "Color", 8, 1)
+				local sw = make("Frame", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -8, .5, 0), Size = UDim2.fromOffset(30, 16), BackgroundColor3 = color}, row)
+				corner(sw, 4); stroke(sw, Color3.new(1, 1, 1), 1, 0.5)
+				row.Activated:Connect(function()
+					openColor(color, function(c) color = c; sw.BackgroundColor3 = c; setf(o, flag, c:ToHex()); if o.Callback then task.spawn(o.Callback, c) end end)
+				end)
+				reg(o.Name or "Color", row)
+				if o.Callback then task.spawn(o.Callback, color) end
+			end
+
+			function Sec:Dropdown(o)
+				local opts, flag = o.Options or {}, o.Flag or o.Name or "Dropdown"
+				local f = make("Frame", {Size = UDim2.new(1, 0, 0, 28), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = ITEM, BackgroundTransparency = 0.35}, content)
+				corner(f, 6); list(f, 2)
+				local head = make("TextButton", {Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Text = "", AutoButtonColor = false}, f)
+				ripple(head)
+				local lb = label(head, "", 8, 1)
+				make("TextLabel", {AnchorPoint = Vector2.new(1, .5), Position = UDim2.new(1, -6, .5, 0), Size = UDim2.fromOffset(16, 16), BackgroundTransparency = 1, Text = "v", Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = SUB}, head)
+				local panel = make("Frame", {Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Visible = false}, f)
+				list(panel, 3); pad(panel, 4)
+				local sb = make("TextBox", {Size = UDim2.new(1, 0, 0, 22), BackgroundColor3 = BG, BackgroundTransparency = 0.3, PlaceholderText = "Search...", PlaceholderColor3 = SUB, Text = "", ClearTextOnFocus = false, Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = TEXT}, panel)
+				corner(sb, 5)
+				local sc = make("ScrollingFrame", {Size = UDim2.new(1, 0, 0, 100), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 2, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y}, panel)
+				list(sc, 2)
+				local sel = getf(o, flag, o.Default)
+				local function set(v, silent)
+					sel = v; setf(o, flag, v, silent)
+					lb.Text = (o.Name or "Dropdown") .. ": " .. tostring(v or "-")
+					if not silent and v ~= nil and o.Callback then task.spawn(o.Callback, v) end
+				end
+				local function refresh(q)
+					q = (q or ""):lower()
+					for _, c in ipairs(sc:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+					for _, v in ipairs(opts) do
+						if q == "" or tostring(v):lower():find(q, 1, true) then
+							local b = make("TextButton", {Size = UDim2.new(1, -4, 0, 22), BackgroundColor3 = BG, BackgroundTransparency = 0.4, Text = tostring(v), Font = Enum.Font.Gotham, TextSize = 12, TextColor3 = TEXT, AutoButtonColor = false}, sc)
+							corner(b, 5); ripple(b)
+							b.Activated:Connect(function() set(v); panel.Visible = false end)
+						end
+					end
+				end
+				refresh(); set(sel, true)
+				sb:GetPropertyChangedSignal("Text"):Connect(function() refresh(sb.Text) end)
+				head.Activated:Connect(function() panel.Visible = not panel.Visible end)
+				reg(o.Name or "Dropdown", f)
+				if sel ~= nil and o.Callback then task.spawn(o.Callback, sel) end
+				return {Set = set, Refresh = function(n) opts = n; refresh() end}
+			end
+			return Sec
+		end
+		return C
+	end
+
+	function Window:Tab(o)
+		o = o or {}
+		local Tab = newContainer(false)
+		local btn = make("TextButton", {Size = UDim2.fromOffset(40, 36), BackgroundColor3 = ITEM, BackgroundTransparency = 0.85, Text = "", AutoButtonColor = false}, TabHolder)
+		corner(btn, 8); ripple(btn)
+		local ic = tostring(o.Icon or o.Name or "?")
+		local img = make("ImageLabel", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromOffset(20, 20), BackgroundTransparency = 1, ImageColor3 = TEXT, Visible = false}, btn)
+		local fb = make("TextLabel", {Size = FULL, BackgroundTransparency = 1, Text = #ic <= 2 and ic or ic:sub(1, 1):upper(), Font = Enum.Font.GothamBold, TextSize = 16, TextColor3 = TEXT}, btn)
+		if o.Icon and #ic > 2 then applyIcon(img, fb, ic) end
+		Tab.btn = btn
+		table.insert(tabs, Tab)
+		btn.Activated:Connect(function() selectTab(Tab) end)
+		if #tabs == 1 then selectTab(Tab) end
+		return Tab
+	end
+
+	function Window:SubPage(title)
+		local P = newContainer(true)
+		P.title = title
+		return P
+	end
+
+	-------------------------------------------------- floating open button
+	local D = cfg.OpenButton or {}
+	local saved = flags.__ob or {}
+	local function hexOf(c, d) return c and c:ToHex() or d end
+	local ob = {
+		Name = saved.Name or D.Name or "Open", Icon = D.Icon,
+		FT = saved.FT or D.FrameTransparency or 0.15, FC = saved.FC or hexOf(D.FrameColor, "0A0A0C"),
+		BT = saved.BT or D.BorderTransparency or 0, BC = saved.BC or hexOf(D.BorderColor, "FFFFFF"),
+		C1 = saved.C1 or "8A2BE2", C2 = saved.C2 or "FF69B4", C3 = saved.C3 or "8A2BE2",
+		Drag = saved.Drag, W = saved.W or (D.Size and D.Size.X.Offset) or 110, H = saved.H or (D.Size and D.Size.Y.Offset) or 32,
+		Shape = saved.Shape or D.Shape or "Rounded", PX = saved.PX, PY = saved.PY,
+	}
+	if ob.Drag == nil then ob.Drag = D.Draggable ~= false end
+	local function persistOb() flags.__ob = ob; save() end
+
+	local function newOpenVisual(parent)
+		local V = {}
+		local btn = make("TextButton", {AutoButtonColor = false, Text = "", BackgroundColor3 = BG}, parent)
+		local cr = corner(btn, 10)
+		local st = make("UIStroke", {ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Thickness = 1.5}, btn)
+		local gr = make("UIGradient", {}, st)
+		table.insert(openGrads, gr)
+		local inner = make("Frame", {Size = FULL, BackgroundTransparency = 1}, btn)
+		local lbl = make("TextLabel", {Size = FULL, BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = TEXT, TextTruncate = Enum.TextTruncate.AtEnd}, inner)
+		local img = make("ImageLabel", {AnchorPoint = Vector2.new(.5, .5), Position = UDim2.fromScale(.5, .5), Size = UDim2.fromScale(.55, .55), BackgroundTransparency = 1, Visible = false, ImageColor3 = TEXT}, inner)
+		ripple(btn)
+		V.btn = btn
+		function V.apply(o)
+			local sh = shapes[o.Shape] or shapes.Rounded
+			local w, h = o.W, o.H
+			V.fixed = false
+			if sh.sq then local s = math.min(w, h); w, h = s, s else w, h = w * sh.w, h * sh.h end
+			if sh.circ and o.W == 30 and o.H == 30 then w, h = 26, 26; V.fixed = true end -- 30x30 circle: pinned top-left, slightly smaller
+			btn.Size = UDim2.fromOffset(w, h)
+			cr.CornerRadius = UDim.new(0, sh.r)
+			btn.Rotation, inner.Rotation = sh.rot, -sh.rot
+			btn.BackgroundColor3, btn.BackgroundTransparency = Color3.fromHex(o.FC), o.FT
+			st.Color, st.Transparency = Color3.fromHex(o.BC), o.BT
+			gr.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromHex(o.C1)), ColorSequenceKeypoint.new(.5, Color3.fromHex(o.C2)), ColorSequenceKeypoint.new(1, Color3.fromHex(o.C3))})
+			lbl.Text = w < 40 and o.Name:sub(1, 1) or o.Name
+			if o.Icon then applyIcon(img, lbl, o.Icon) end
+		end
+		return V
+	end
+
+	local Open = newOpenVisual(Gui)
+	Open.btn.Visible = false
+	local function placeOpen()
+		local b = Open.btn
+		Open.apply(ob)
+		if Open.fixed then b.AnchorPoint = Vector2.new(0, 0); b.Position = UDim2.fromOffset(8, 8)
+		elseif ob.PX then b.AnchorPoint = Vector2.new(0, 0); b.Position = UDim2.fromOffset(ob.PX, ob.PY)
+		elseif D.Position then b.AnchorPoint = D.AnchorPoint or Vector2.new(0, 0); b.Position = D.Position
+		else b.AnchorPoint = Vector2.new(.5, 0); b.Position = UDim2.new(.5, 0, 0, 10) end
+	end
+	placeOpen()
+	draggable(Open.btn, Open.btn, function() return ob.Drag end, function()
+		ob.PX, ob.PY = Open.btn.AbsolutePosition.X, Open.btn.AbsolutePosition.Y
+		persistOb(); placeOpen()
+	end)
+
+	function Window:Show() Main.Visible = true; Open.btn.Visible = false end
+	function Window:Hide() Main.Visible = false; Open.btn.Visible = true end
+	function Window:Toggle() if Main.Visible then Window:Hide() else Window:Show() end end
+	function Window:Exit(keepOpenButton) if keepOpenButton then Window:Hide() else Gui:Destroy() end end
+	Open.btn.Activated:Connect(function() if not Open.btn:GetAttribute("Dragged") then Window:Show() end end)
+	minBtn.Activated:Connect(function() Window:Exit(true) end)   -- leave window, keep floating button
+	closeBtn.Activated:Connect(function() Window:Exit(false) end) -- leave everything, no floating button
+	bind(UIS.InputBegan, function(i, gp) if not gp and i.KeyCode == (cfg.ToggleKey or Enum.KeyCode.RightShift) then Window:Toggle() end end)
+
+	-------------------------------------------------- built-in settings tab + open button customize page
+	function Window:SettingsTab()
+		local tab = Window:Tab({Name = "Settings", Icon = "settings"})
+		local s1 = tab:Section({Name = "Floating Button"})
+		local obPage, preview
+		local function refresh()
+			placeOpen(); persistOb()
+			if preview then preview.apply(ob); preview.btn.AnchorPoint = Vector2.new(.5, .5); preview.btn.Position = UDim2.fromScale(.5, .5) end
+		end
+		s1:Button({Name = "Customize Open Button", NoSave = true, Callback = function()
+			if not obPage then
+				obPage = Window:SubPage("Open Button")
+				local sp = obPage:Section({Name = "Preview", Side = "Left"})
+				sp:Custom(64, function(f) preview = newOpenVisual(f); preview.btn.Active = false; refresh() end)
+				local st = obPage:Section({Name = "Style", Side = "Left"})
+				st:TextBox({Name = "Button name", NoSave = true, Default = ob.Name, Callback = function(t) if t ~= "" then ob.Name = t; refresh() end end})
+				st:Slider({Name = "Frame transparency", NoSave = true, Min = 0, Max = 1, Increment = 0.05, Default = ob.FT, Callback = function(v) ob.FT = v; refresh() end})
+				st:Slider({Name = "Border transparency", NoSave = true, Min = 0, Max = 1, Increment = 0.05, Default = ob.BT, Callback = function(v) ob.BT = v; refresh() end})
+				st:Slider({Name = "Width", NoSave = true, Min = 24, Max = 200, Default = ob.W, Callback = function(v) ob.W = v; refresh() end})
+				st:Slider({Name = "Height", NoSave = true, Min = 24, Max = 120, Default = ob.H, Callback = function(v) ob.H = v; refresh() end})
+				st:Dropdown({Name = "Shape (30)", NoSave = true, Options = shapeNames, Default = ob.Shape, Callback = function(v) ob.Shape = v; refresh() end})
+				st:Toggle({Name = "Draggable", NoSave = true, Default = ob.Drag, Callback = function(v) ob.Drag = v; persistOb() end})
+				local sc = obPage:Section({Name = "Colors", Side = "Right"})
+				sc:ColorPicker({Name = "Gradient 1", NoSave = true, Default = Color3.fromHex(ob.C1), Callback = function(c) ob.C1 = c:ToHex(); refresh() end})
+				sc:ColorPicker({Name = "Gradient 2", NoSave = true, Default = Color3.fromHex(ob.C2), Callback = function(c) ob.C2 = c:ToHex(); refresh() end})
+				sc:ColorPicker({Name = "Gradient 3", NoSave = true, Default = Color3.fromHex(ob.C3), Callback = function(c) ob.C3 = c:ToHex(); refresh() end})
+				sc:ColorPicker({Name = "Frame color", NoSave = true, Default = Color3.fromHex(ob.FC), Callback = function(c) ob.FC = c:ToHex(); refresh() end})
+				sc:ColorPicker({Name = "Border color", NoSave = true, Default = Color3.fromHex(ob.BC), Callback = function(c) ob.BC = c:ToHex(); refresh() end})
+				sc:Button({Name = "Reset position", NoSave = true, Callback = function() ob.PX, ob.PY = nil, nil; refresh() end})
+			end
+			Window:OpenSub(obPage)
+		end})
+		local s2 = tab:Section({Name = "Window"})
+		s2:Button({Name = "Exit (keep open button)", NoSave = true, Callback = function() Window:Exit(true) end})
+		s2:Button({Name = "Exit completely", NoSave = true, Callback = function() Window:Exit(false) end})
+		local s3 = tab:Section({Name = "Config"})
+		s3:Button({Name = "Save config now", NoSave = true, Callback = function() persistOb(); Window:Notify({Title = "Config", Message = "Saved.", Duration = 2}) end})
+		s3:Button({Name = "Reset config", NoSave = true, Callback = function() table.clear(flags); save(); Window:Notify({Title = "Config", Message = "Reset. Re-execute to apply.", Duration = 3}) end})
+		return tab
+	end
+
+	-------------------------------------------------- AVATAR HUB
+	function Window:AvatarHub(tab)
+		tab = tab or Window:Tab({Name = "Avatar", Icon = "user"})
+		local hubSec = tab:Section({Name = "Avatar Hub"})
+		local original, custom
+		local autoRespawn = flags.av_auto or false
+		local currentFx = flags.av_fx
+		task.spawn(function() local ok, d = pcall(function() return Players:GetHumanoidDescriptionFromUserId(LP.UserId) end); if ok then original = d end end)
+
+		local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
+		local function applyDesc(d)
+			local h = hum()
+			if not h then Window:Notify({Title = "Avatar", Message = "No character found.", Duration = 3}); return false end
+			local ok = pcall(function() h:ApplyDescription(d) end)
+			if ok then custom = d end
+			return ok
+		end
+		local function editDesc(fn)
+			local h = hum()
+			if not h then Window:Notify({Title = "Avatar", Message = "No character found.", Duration = 3}); return end
+			local ok, d = pcall(function() return h:GetAppliedDescription() end)
+			if not ok then return end
+			fn(d); applyDesc(d)
+		end
+		local function setAcc(d, accType, id)
+			local new = {}
+			for _, a in ipairs(d:GetAccessories(true)) do if a.AccessoryType ~= accType then table.insert(new, a) end end
+			table.insert(new, {AssetId = id, AccessoryType = accType, IsLayered = false, Order = #new + 1})
+			d:SetAccessories(new, true)
+		end
+		local ASSETFIELD = {[17] = "Head", [18] = "Face", [27] = "Torso", [28] = "RightArm", [29] = "LeftArm", [30] = "LeftLeg", [31] = "RightLeg", [11] = "Shirt", [12] = "Pants", [2] = "GraphicTShirt", [8] = {"Hat"}, [41] = {"Hair"}, [42] = {"Face"}, [43] = {"Neck"}, [44] = {"Shoulder"}, [45] = {"Front"}, [46] = {"Back"}, [47] = {"Waist"}}
+		local function applyBundle(bid)
+			local ok, det = pcall(function() return AssetService:GetBundleDetailsAsync(bid) end)
+			if not ok or not det then Window:Notify({Title = "Avatar", Message = "Bundle not found.", Duration = 3}); return end
+			editDesc(function(d)
+				for _, it in ipairs(det.Items) do
+					if it.Type == "Asset" then
+						local ok2, info = pcall(function() return MPS:GetProductInfo(it.Id) end)
+						local f = ok2 and info and ASSETFIELD[info.AssetTypeId]
+						if type(f) == "string" then d[f] = it.Id elseif type(f) == "table" then setAcc(d, Enum.AccessoryType[f[1]], it.Id) end
+					end
+				end
+			end)
+		end
+		local function importSkin(txt)
+			txt = (txt:gsub("%s", ""))
+			local id = tonumber(txt)
+			if not id then
+				local ok, r = pcall(function() return Players:GetUserIdFromNameAsync(txt) end)
+				if ok then id = r else Window:Notify({Title = "Skin", Message = "User not found.", Duration = 3}); return end
+			end
+			local ok, d = pcall(function() return Players:GetHumanoidDescriptionFromUserId(id) end)
+			if ok and d and applyDesc(d) then Window:Notify({Title = "Skin", Message = "Skin applied.", Duration = 3})
+			else Window:Notify({Title = "Skin", Message = "Failed to apply skin.", Duration = 3}) end
+		end
+
+		-- effects / auras (50+)
+		local FX, FXNAMES = {}, {"None"}
+		local COLORS = {{"Red", "FF3B3B"}, {"Orange", "FF8A1F"}, {"Yellow", "FFE14D"}, {"Lime", "8CFF3B"}, {"Green", "2BD968"}, {"Cyan", "2BE3FF"}, {"Blue", "2B6BFF"}, {"Purple", "8A2BE2"}, {"Pink", "FF69B4"}, {"White", "FFFFFF"}}
+		local fxConns, backup = {}, {}
+		local function clearFx()
+			for _, c in ipairs(fxConns) do c:Disconnect() end
+			table.clear(fxConns)
+			for p, b in pairs(backup) do if p.Parent then p.Material, p.Transparency = b[1], b[2] end end
+			table.clear(backup)
+			local c = LP.Character
+			if c then for _, x in ipairs(c:GetDescendants()) do if x.Name == "SGlassFx" then x:Destroy() end end end
+		end
+		local function particle(root, col, rate, size)
+			return make("ParticleEmitter", {Name = "SGlassFx", Color = ColorSequence.new(col), Rate = rate or 45, Lifetime = NumberRange.new(1, 1.8), Speed = NumberRange.new(1, 3), SpreadAngle = Vector2.new(360, 360), Size = NumberSequence.new({NumberSequenceKeypoint.new(0, size or .7), NumberSequenceKeypoint.new(1, 0)}), Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)}), LightEmission = 1, Rotation = NumberRange.new(0, 360)}, root)
+		end
+		local KINDS = {
+			Aura = function(c, root, col) particle(root, col); make("PointLight", {Name = "SGlassFx", Color = col, Range = 10, Brightness = 2}, root) end,
+			Fire = function(c, root, col) make("Fire", {Name = "SGlassFx", Color = col, SecondaryColor = col:Lerp(Color3.new(1, 1, 1), .4), Heat = 8, Size = 6}, root) end,
+			["Sparkle Trail"] = function(c, root, col)
+				local a0 = make("Attachment", {Name = "SGlassFx", Position = Vector3.new(0, 1.5, 0)}, root)
+				local a1 = make("Attachment", {Name = "SGlassFx", Position = Vector3.new(0, -1.5, 0)}, root)
+				make("Trail", {Name = "SGlassFx", Attachment0 = a0, Attachment1 = a1, Color = ColorSequence.new(col), Lifetime = .7, LightEmission = 1, Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)})}, root)
+			end,
+			Glow = function(c, root, col)
+				make("Highlight", {Name = "SGlassFx", FillColor = col, FillTransparency = .7, OutlineColor = col, Adornee = c}, c)
+				make("PointLight", {Name = "SGlassFx", Color = col, Range = 12, Brightness = 2.5}, root)
+			end,
+			Orbit = function(c, root, col)
+				local parts = {}
+				for i = 1, 3 do parts[i] = make("Part", {Name = "SGlassFx", Size = Vector3.new(.5, .5, .5), Material = Enum.Material.Neon, Color = col, Anchored = true, CanCollide = false, CanQuery = false, CanTouch = false, Shape = Enum.PartType.Ball}, c) end
+				local t = 0
+				table.insert(fxConns, RS.Heartbeat:Connect(function(dt)
+					t += dt * 2.2
+					if not root.Parent then return end
+					for i, p in ipairs(parts) do local a = t + i * 2.094; p.CFrame = root.CFrame * CFrame.new(math.cos(a) * 3.4, math.sin(t + i) * .8, math.sin(a) * 3.4) end
+				end))
+			end,
+		}
+		local KORDER = {"Aura", "Fire", "Sparkle Trail", "Glow", "Orbit"}
+		for _, cl in ipairs(COLORS) do
+			for _, k in ipairs(KORDER) do
+				local name = cl[1] .. " " .. k
+				FX[name] = function(c, root) KINDS[k](c, root, Color3.fromHex(cl[2])) end
+				table.insert(FXNAMES, name)
+			end
+		end
+		local function special(name, fn) FX[name] = fn; table.insert(FXNAMES, name) end
+		special("Rainbow Aura", function(c, root)
+			local pe = particle(root, Color3.new(1, 1, 1), 60, .8)
+			pe.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromHex("FF0000")), ColorSequenceKeypoint.new(.33, Color3.fromHex("00FF00")), ColorSequenceKeypoint.new(.66, Color3.fromHex("0000FF")), ColorSequenceKeypoint.new(1, Color3.fromHex("FF00FF"))})
+		end)
+		special("Light Pulse", function(c, root)
+			local l = make("PointLight", {Name = "SGlassFx", Range = 14, Brightness = 3}, root)
+			local t = 0
+			table.insert(fxConns, RS.Heartbeat:Connect(function(dt) t += dt; l.Color = Color3.fromHSV((t * .3) % 1, .8, 1); l.Brightness = 2 + math.sin(t * 4) end))
+		end)
+		special("Void Smoke", function(c, root) make("Smoke", {Name = "SGlassFx", Color = Color3.fromRGB(40, 0, 70), Size = 8, Opacity = .5, RiseVelocity = 2}, root) end)
+		special("Neon Body", function(c) for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then backup[p] = {p.Material, p.Transparency}; p.Material = Enum.Material.Neon end end end)
+		special("Ghost Body", function(c) for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then backup[p] = {p.Material, p.Transparency}; p.Material = Enum.Material.ForceField; p.Transparency = .35 end end end)
+		special("Gold Statue", function(c) for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then backup[p] = {p.Material, p.Transparency}; p.Material = Enum.Material.Metal; p.Color = Color3.fromRGB(255, 200, 60) end end end)
+		special("Aurora Trail", function(c, root)
+			local a0 = make("Attachment", {Name = "SGlassFx", Position = Vector3.new(0, 2, 0)}, root)
+			local a1 = make("Attachment", {Name = "SGlassFx", Position = Vector3.new(0, -2, 0)}, root)
+			make("Trail", {Name = "SGlassFx", Attachment0 = a0, Attachment1 = a1, Lifetime = 1.2, LightEmission = 1, Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromHex("2BE3FF")), ColorSequenceKeypoint.new(.5, Color3.fromHex("8A2BE2")), ColorSequenceKeypoint.new(1, Color3.fromHex("FF69B4"))}), Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)})}, root)
+		end)
+		local function applyFx(name)
+			clearFx()
+			if not name or name == "None" or not FX[name] then return end
+			local c = LP.Character
+			local root = c and c:FindFirstChild("HumanoidRootPart")
+			if root then pcall(FX[name], c, root) end
+		end
+
+		bind(LP.CharacterAdded, function(c)
+			c:WaitForChild("Humanoid", 10); c:WaitForChild("HumanoidRootPart", 10); task.wait(0.6)
+			if autoRespawn and custom then pcall(function() hum():ApplyDescription(custom) end) end
+			if currentFx and currentFx ~= "None" then applyFx(currentFx) end
+		end)
+		if currentFx and currentFx ~= "None" then task.defer(applyFx, currentFx) end
+
+		-- hub page (opens from the button)
+		local hub
+		hubSec:Button({Name = "Open Avatar Hub", NoSave = true, Callback = function()
+			if not hub then
+				hub = Window:SubPage("Avatar Hub")
+				local s1 = hub:Section({Name = "Skin Importer"})
+				local nameBox = s1:TextBox({Name = "Username or UserID", Placeholder = "Roblox name / ID"})
+				s1:Button({Name = "Apply Skin", NoSave = true, Callback = function() importSkin(nameBox.Text) end})
+				s1:Button({Name = "Reset Skin", NoSave = true, Callback = function()
+					if original and applyDesc(original) then custom = nil; Window:Notify({Title = "Skin", Message = "Skin reset.", Duration = 3}) end
+				end})
+				s1:Toggle({Name = "Auto-apply on respawn", Flag = "av_auto", Default = autoRespawn, Callback = function(v) autoRespawn = v end})
+
+				local sf = hub:Section({Name = "Effects & Auras"})
+				sf:Dropdown({Name = "Effect (" .. (#FXNAMES - 1) .. ")", Flag = "av_fx", Options = FXNAMES, Default = currentFx or "None", Callback = function(v) currentFx = v; applyFx(v) end})
+				sf:Button({Name = "Clear effects", NoSave = true, Callback = function() currentFx = "None"; flags.av_fx = "None"; save(); clearFx() end})
+
+				local sp = hub:Section({Name = "Packages (Corblox)"})
+				sp:Dropdown({Name = "Corblox package", NoSave = true, Options = {"Korblox Deathspeaker", "Headless Horseman"}, Callback = function(v)
+					local id = v == "Korblox Deathspeaker" and 139607718 or 134082579
+					editDesc(function(d) if v == "Korblox Deathspeaker" then d.RightLeg = id else d.Head = id end end)
+				end})
+				sp:TextBox({Name = "Body package (Bundle ID)", Placeholder = "bundle id", NoSave = true, Callback = function(t) local id = tonumber(t); if id then task.spawn(applyBundle, id) end end})
+
+				local FIELDS = {
+					{"Clothing", {{"Shirt ID", "f", "Shirt"}, {"Pants ID", "f", "Pants"}, {"T-Shirt ID", "f", "GraphicTShirt"}}},
+					{"Hair & Head", {{"Hair ID", "a", "Hair"}, {"Hat / Head item ID", "a", "Hat"}, {"Face accessory ID", "a", "Face"}, {"Face (expression) ID", "f", "Face"}}},
+					{"Shoes & Accessories", {{"Shoes ID", "shoe"}, {"Neck ID", "a", "Neck"}, {"Shoulder ID", "a", "Shoulder"}, {"Front ID", "a", "Front"}, {"Back ID", "a", "Back"}, {"Waist ID", "a", "Waist"}}},
+					{"Body Parts", {{"Head ID", "f", "Head"}, {"Torso ID", "f", "Torso"}, {"Left arm ID", "f", "LeftArm"}, {"Right arm ID", "f", "RightArm"}, {"Left leg ID", "f", "LeftLeg"}, {"Right leg ID", "f", "RightLeg"}}},
+				}
+				for _, grp in ipairs(FIELDS) do
+					local s = hub:Section({Name = grp[1]})
+					for _, it in ipairs(grp[2]) do
+						s:TextBox({Name = it[1], Placeholder = "asset id", NoSave = true, Callback = function(t)
+							local id = tonumber(t)
+							if not id then return end
+							task.spawn(function()
+								editDesc(function(d)
+									if it[2] == "f" then d[it[3]] = id
+									elseif it[2] == "a" then setAcc(d, Enum.AccessoryType[it[3]], id)
+									else setAcc(d, Enum.AccessoryType.LeftShoe, id); setAcc(d, Enum.AccessoryType.RightShoe, id) end
+								end)
+							end)
+						end})
+					end
+				end
+			end
+			Window:OpenSub(hub)
+		end})
+		return tab
+	end
+
+	Window.Save = save
+	Window.Gui = Gui
+	return Window
+end
+
+return Lib
+
+--[[ ============ EXAMPLE ============
